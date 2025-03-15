@@ -7,15 +7,17 @@ import numpy as np
 import nltk
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
-from nltk import pos_tag
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 from textstat import flesch_reading_ease
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Dense, Dropout
-from tensorflow.keras.optimizers import Adam
-from transformers import AutoTokenizer, TFAutoModel
 import tensorflow as tf
-import keras
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Embedding, LSTM, Dense, Dropout, Input, Concatenate, Flatten
+from sklearn.model_selection import train_test_split
+import pickle
+from features import FeatureExtractor
 
 
 # Download the stopwords and punkt resources (if not already downloaded)
@@ -29,23 +31,9 @@ dataset_csv = "datasets/analysisdataset.csv"
 dataset_txt = "datasets/SMSSmishCollection.txt"
 columns_to_keep = ["MainText", "Phishing"]
 
-# List of common suspicious words in smishing messages
-SUSPICIOUS_WORDS = [
-    "urgent", "immediately", "act now", "attention", "important",
-    "limited time", "alert", "hurry", "final notice", "winner",
-    "claim now", "call now", "verify", "action required", "reply now",
-    "warning", "IRS", "I.R.S", "arrest", "account", "free", "bank",
-    "click", "claim", "limited", "lottery"
-]
-
 # Initialize TF-IDF and BoW
 tfidf_vectorizer = TfidfVectorizer(max_features=5000)
 bow_vectorizer = CountVectorizer(max_features=5000)
-
-# Load tokenizer
-tokenizer = AutoTokenizer.from_pretrained("huawei-noah/TinyBERT_General_4L_312D")
-#model = TFMobileBertForSequenceClassification.from_pretrained('google/mobilebert-uncased', num_labels=2)
-tinybert_model = TFAutoModel.from_pretrained("huawei-noah/TinyBERT_General_4L_312D", from_pt=True)
 
 
 def read_dataset():
@@ -137,49 +125,6 @@ def clean_sms(text):
     return filtered_text
 
 
-def extract_features(dataset):
-    print("### Extracting Features ###")
-
-    # Convert labels to int (0 for 'ham', 1 for 'smish')
-    converted_labels = dataset['Label'].apply(lambda x: 1 if x == 'smish' else 0).values
-
-    contains_phone = np.array(dataset['CleanText'].apply(contains_phone_number)).reshape(-1, 1)
-    contains_suspicious = np.array(dataset['CleanText'].apply(contains_suspicious_words)).reshape(-1, 1)
-    readability_score = np.array(dataset['CleanText'].apply(flesch_reading_ease)).reshape(-1, 1)
-    noun_count = np.array(dataset['CleanText'].apply(count_nouns)).reshape(-1, 1)
-
-    features = np.hstack((contains_phone, contains_suspicious, readability_score, noun_count))
-    labels = np.array(converted_labels)
-
-    return features, labels
-
-
-def contains_phone_number(text):
-    """Check if the SMS contains a phone number"""
-    # Regular expression pattern to match phone numbers
-    phone_pattern = re.compile(r'\b(?:\+?\d{1,3}[-.\s]?)?(?:\(\d{1,4}\)[-.\s]?)?(?:\d{1,4}[-.\s]?){2,4}\d\b')
-
-    # Find all phone numbers in the text
-    phone_numbers = phone_pattern.findall(text)
-
-    return int(bool(phone_numbers))
-
-
-def contains_suspicious_words(text):
-    """Check if an SMS contains suspicious words."""
-    text = text.lower()
-    for word in SUSPICIOUS_WORDS:
-        if re.search(r'\b' + re.escape(word) + r'\b', text):  # Match whole words
-            return 1
-    return 0
-
-
-def count_nouns(text):
-    words = word_tokenize(text)
-    tagged_words = pos_tag(words)
-    return sum(1 for word, pos in tagged_words if pos.startswith('NN'))
-
-
 def vectorize_text(texts, fit=False):
     """Convert SMS text into TF-IDF & BoW vectors"""
     if fit:
@@ -195,147 +140,73 @@ def vectorize_text(texts, fit=False):
 def ml_model(dataset):
     print("### Building Model ###")
 
-    # Tokenize and prepare input for MobileBERT
-    encoded_input = tokenizer(dataset['CleanText'].tolist(), padding=True, truncation=True, max_length=128, return_tensors="tf")
+    # Preprocess text data
+    X_text = dataset['CleanText'].astype(str).values
+    y = dataset['Label'].values
 
-    # Extract input tensors
-    input_ids = encoded_input["input_ids"]
-    attention_mask = encoded_input["attention_mask"]
+    # Encode labels (smish -> 1, ham -> 0)
+    label_encoder = LabelEncoder()
+    y = label_encoder.fit_transform(y)
 
-    print(input_ids.shape, attention_mask.shape)
+    # Tokenization
+    max_words = 5000  # Vocabulary size
+    max_len = 100  # Max length of SMS messages
 
-    # Forward pass through TinyBERT
-    outputs = tinybert_model(input_ids=input_ids, attention_mask=attention_mask)
+    tokenizer = Tokenizer(num_words=max_words, oov_token="<OOV>")
+    tokenizer.fit_on_texts(X_text)
+    X_sequences = tokenizer.texts_to_sequences(X_text)
+    X_padded = pad_sequences(X_sequences, maxlen=max_len, padding='post')
 
-    # Extract embeddings
-    embeddings = outputs.last_hidden_state
+    # Extract additional features
+    fe = FeatureExtractor()
+    X_features = np.array([fe.extract_features(text) for text in X_text])
 
-    print(embeddings.shape)
+    # Normalize numerical features
+    scaler = StandardScaler()
+    X_features[:, 3:] = scaler.fit_transform(X_features[:, 3:])
 
-    # Convert labels to int (0 for 'ham', 1 for 'smish')
-    converted_labels = dataset['Label'].apply(lambda x: 1 if x == 'smish' else 0).values
+    # Split dataset
+    X_train_text, X_test_text, X_train_features, X_test_features, y_train, y_test = train_test_split(
+        X_padded, X_features, y, test_size=0.2, random_state=42
+    )
 
-    # Convert labels to TensorFlow tensors
-    labels = tf.convert_to_tensor(converted_labels, dtype=tf.int32)
+    text_input = Input(shape=(max_len,))
+    embedding = Embedding(max_words, 128)(text_input)
+    lstm = LSTM(64, return_sequences=True)(embedding)
+    lstm = Dropout(0.5)(lstm)
+    lstm = LSTM(32)(lstm)
 
-    '''
-    custom_features, labels = extract_features(dataset)
-    text_vectors = vectorize_text(dataset['CleanText'].tolist(), fit=True)
+    features_input = Input(shape=(4,))
+    features_dense = Dense(16, activation="relu")(features_input)
 
-    # Define explicit MobileBERT inputs
-    input_ids = Input(shape=(128,), dtype=tf.int32, name="input_ids")
-    attention_mask = Input(shape=(128,), dtype=tf.int32, name="attention_mask")
-
-    # Combine all features
-    final_inputs = {
-        "input_ids": bert_inputs["input_ids"],
-        "attention_mask": bert_inputs["attention_mask"],
-        "custom_features": tf.convert_to_tensor(custom_features, dtype=tf.float32),
-        "text_vectors": tf.convert_to_tensor(text_vectors, dtype=tf.float32)
-    }
-
-    # Use the custom embedding layer
-    bert_embeddings = MobileBertEmbedLayer(mobilebert)([input_ids, attention_mask])
-    pooled_output = GlobalAveragePooling1D()(bert_embeddings)  # Convert embeddings to fixed size
-
-    # Define custom inputs
-    custom_features_input = Input(shape=(4,), dtype=tf.float32, name="custom_features")
-    text_vectors_input = Input(shape=(5000 * 2,), name="text_vectors")  # TF-IDF + BoW
-
-    # Concatenate features
-    merged = Concatenate()([pooled_output, custom_features_input, text_vectors_input])
-
-    # Fully Connected Layers
-    x = Dense(128, activation="relu")(merged)
-    x = Dropout(0.3)(x)
-    x = Dense(64, activation="relu")(x)
-    x = Dropout(0.3)(x)
-
-    # Classification layer
-    output = Dense(1, activation="sigmoid", name="output")(x)
-
-    # Build final model
-    model = Model(inputs=[input_ids, attention_mask, custom_features_input, text_vectors_input], outputs=output)
-
-    '''
-
-    # Create model instance
-    model = TinyBERTClassifier(tinybert_model)
+    # Concatenate LSTM output with additional features
+    concatenated = Concatenate()([lstm, features_dense])
+    output = Dense(1, activation="sigmoid")(concatenated)
 
     # Compile the model
-    model.compile(optimizer=Adam(learning_rate=5e-5), loss="binary_crossentropy", metrics=["accuracy"])
-
-    # Create a dataset
-    batch_size = 16
-    dataset = tf.data.Dataset.from_tensor_slices(((input_ids, attention_mask), labels)).batch(batch_size)
+    model = Model(inputs=[text_input, features_input], outputs=output)
+    model.compile(loss="binary_crossentropy", optimizer="adam", metrics=["accuracy"])
 
     # Train the model
-    model.fit(dataset, epochs=3)
+    model.fit(
+        [X_train_text, X_train_features], y_train,
+        epochs=5, batch_size=32, validation_data=([X_test_text, X_test_features], y_test)
+    )
 
-    return model
+    # Save model
+    model.save("lstm_sms_classifier.keras")
 
+    # Save tokenizer for later use
+    with open("tokenizer.pkl", "wb") as f:
+        pickle.dump(tokenizer, f)
 
-def save_model(pretrained_model):
-    # Save the model
-    pretrained_model.export("tinybert_smishing_model")
+    with open("scaler.pkl", "wb") as f:
+        pickle.dump(scaler, f)
 
-    # Convert the SavedModel to TFLite
-    converter = tf.lite.TFLiteConverter.from_saved_model("tinybert_smishing_model")
-
-    # Enable optimizations (optional for mobile efficiency)
-    converter.optimizations = [tf.lite.Optimize.DEFAULT]
-
-    # Convert the model
-    tflite_model = converter.convert()
-
-    # Save the TFLite model
-    with open("tinybert_smishing_model.tflite", "wb") as f:
-        f.write(tflite_model)
-
-    print("TFLite model saved successfully!")
-
-
-# Define custom classification model
-@keras.saving.register_keras_serializable()
-class TinyBERTClassifier(Model):
-    def __init__(self, tiny_model, dropout_rate=0.3, **kwargs):
-        super(TinyBERTClassifier, self).__init__()
-        self.tinybert = tiny_model
-        self.dropout = Dropout(dropout_rate)
-        self.classifier = Dense(1, activation="sigmoid")
-
-    def call(self, inputs):
-        input_ids, attention_mask = inputs
-        outputs = self.tinybert(input_ids=input_ids, attention_mask=attention_mask)
-        pooled_output = outputs.last_hidden_state[:, 0, :]
-        x = self.dropout(pooled_output)
-        return self.classifier(x)
-
-    def get_config(self):
-        config = super().get_config()
-        config.update({"dropout_rate": self.dropout.rate})
-        return config
-
-    @classmethod
-    def from_config(cls, config):
-        tb_model = TFAutoModel.from_pretrained(
-            "huawei-noah/TinyBERT_General_4L_312D", from_pt=True
-        )
-        return cls(tiny_model=tb_model, **config)
+    print("Model, tokenizer and scaler saved successfully!")
 
 
 if __name__ == "__main__":
     df = read_dataset()
     cleaned_dataset = clean_dataset(df)
-    ml_model = ml_model(cleaned_dataset)
-    save_model(ml_model)
-
-    # Example predictions
-    smish = ("WARNING:(Criminal Investigation Division) I.R.S is filing a lawsuit against you, for more information "
-             "call +17038798780 on urgent basis, Otherwise your arrest warrant will be forwarded to your local police "
-             "department and your property and bank accounts and social benifits will be frozen by government.")
-
-    ham = "Hey, are we still meeting for coffee at 3?"
-
-    #print(predict_sms(smish, lstm_model))
-    #print(predict_sms(ham, lstm_model))
+    ml_model(cleaned_dataset)
