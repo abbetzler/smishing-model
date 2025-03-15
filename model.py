@@ -7,7 +7,7 @@ import numpy as np
 import nltk
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
-from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from textstat import flesch_reading_ease
 import tensorflow as tf
@@ -121,18 +121,6 @@ def clean_sms(text):
     return filtered_text
 
 
-def vectorize_text(texts, fit=False):
-    """Convert SMS text into TF-IDF & BoW vectors"""
-    if fit:
-        tfidf_matrix = tfidf_vectorizer.fit_transform(texts).toarray()
-        bow_matrix = bow_vectorizer.fit_transform(texts).toarray()
-    else:
-        tfidf_matrix = tfidf_vectorizer.transform(texts).toarray()
-        bow_matrix = bow_vectorizer.transform(texts).toarray()
-
-    return np.hstack((tfidf_matrix, bow_matrix))
-
-
 def ml_model(dataset):
     print("### Building Model ###")
 
@@ -161,13 +149,13 @@ def ml_model(dataset):
     scaler = StandardScaler()
     X_features[:, 3:] = scaler.fit_transform(X_features[:, 3:])
 
-    # Bag-of-Words Transformation
-    vectorizer = CountVectorizer(max_features=1000, binary=True)  # Limit BoW size
-    X_bow = vectorizer.fit_transform(X_text).toarray()
+    # TF-IDF Transformation
+    vectorizer = TfidfVectorizer(max_features=1000)  # Limit TF-IDF features to 1000
+    X_tfidf = vectorizer.fit_transform(X_text).toarray()
 
     # Split dataset
-    X_train_text, X_test_text, X_train_features, X_test_features, X_train_bow, X_test_bow, y_train, y_test = train_test_split(
-        X_padded, X_features, X_bow, y, test_size=0.2, random_state=42
+    X_train_text, X_test_text, X_train_features, X_test_features, X_train_tfidf, X_test_tfidf, y_train, y_test = train_test_split(
+        X_padded, X_features, X_tfidf, y, test_size=0.2, random_state=42
     )
 
     text_input = Input(shape=(max_len,))
@@ -179,22 +167,22 @@ def ml_model(dataset):
     features_input = Input(shape=(4,))
     features_dense = Dense(16, activation="relu")(features_input)
 
-    # Bag-of-Words input
-    bow_input = Input(shape=(1000,))
-    bow_dense = Dense(16, activation="relu")(bow_input)
+    # TF-IDF input
+    tfidf_input = Input(shape=(1000,))
+    tfidf_dense = Dense(16, activation="relu")(tfidf_input)
 
     # Concatenate LSTM output with additional features
-    concatenated = Concatenate()([lstm, features_dense, bow_dense])
+    concatenated = Concatenate()([lstm, features_dense, tfidf_dense])
     output = Dense(1, activation="sigmoid")(concatenated)
 
     # Compile the model
-    model = Model(inputs=[text_input, features_input, bow_input], outputs=output)
+    model = Model(inputs=[text_input, features_input, tfidf_input], outputs=output)
     model.compile(loss="binary_crossentropy", optimizer="adam", metrics=["accuracy"])
 
     # Train the model
     model.fit(
-        [X_train_text, X_train_features, X_train_bow], y_train,
-        epochs=5, batch_size=32, validation_data=([X_test_text, X_test_features, X_test_bow], y_test)
+        [X_train_text, X_train_features, X_train_tfidf], y_train,
+        epochs=5, batch_size=32, validation_data=([X_test_text, X_test_features, X_test_tfidf], y_test)
     )
 
     # Save model

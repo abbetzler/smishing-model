@@ -30,16 +30,16 @@ def preprocess_sms(text):
     # Normalize numerical features
     features[:, 3:] = scaler.transform(features[:, 3:])
 
-    # Convert text to Bag-of-Words vector
-    bow_vector = vectorizer.transform([text]).toarray()
+    # Convert text to TF-IDF vector
+    tfidf_vector = vectorizer.transform([text]).toarray()
 
-    return padded, features, bow_vector
+    return padded, features, tfidf_vector
 
 
 # Predict function
 def predict_sms(text):
-    X_text, X_features, X_bow = preprocess_sms(text)
-    prediction = model.predict([X_text, X_features, X_bow])[0, 0]
+    X_text, X_features, X_tfidf = preprocess_sms(text)
+    prediction = model.predict([X_text, X_features, X_tfidf])[0, 0]
     print(prediction)
     return "smish" if prediction > 0.5 else "ham"
 
