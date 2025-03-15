@@ -14,6 +14,9 @@ with open("tokenizer.pkl", "rb") as f:
 with open("scaler.pkl", "rb") as f:
     scaler = pickle.load(f)
 
+with open("vectorizer.pkl", "rb") as f:
+    vectorizer = pickle.load(f)
+
 
 # Function to preprocess input SMS for prediction
 def preprocess_sms(text):
@@ -27,13 +30,16 @@ def preprocess_sms(text):
     # Normalize numerical features
     features[:, 3:] = scaler.transform(features[:, 3:])
 
-    return padded, features
+    # Convert text to Bag-of-Words vector
+    bow_vector = vectorizer.transform([text]).toarray()
+
+    return padded, features, bow_vector
 
 
 # Predict function
 def predict_sms(text):
-    X_text, X_features = preprocess_sms(text)
-    prediction = model.predict([X_text, X_features])[0, 0]
+    X_text, X_features, X_bow = preprocess_sms(text)
+    prediction = model.predict([X_text, X_features, X_bow])[0, 0]
     print(prediction)
     return "smish" if prediction > 0.5 else "ham"
 

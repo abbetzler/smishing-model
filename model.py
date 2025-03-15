@@ -31,10 +31,6 @@ dataset_csv = "datasets/analysisdataset.csv"
 dataset_txt = "datasets/SMSSmishCollection.txt"
 columns_to_keep = ["MainText", "Phishing"]
 
-# Initialize TF-IDF and BoW
-tfidf_vectorizer = TfidfVectorizer(max_features=5000)
-bow_vectorizer = CountVectorizer(max_features=5000)
-
 
 def read_dataset():
     print("### Reading Dataset ###")
@@ -165,9 +161,13 @@ def ml_model(dataset):
     scaler = StandardScaler()
     X_features[:, 3:] = scaler.fit_transform(X_features[:, 3:])
 
+    # Bag-of-Words Transformation
+    vectorizer = CountVectorizer(max_features=1000, binary=True)  # Limit BoW size
+    X_bow = vectorizer.fit_transform(X_text).toarray()
+
     # Split dataset
-    X_train_text, X_test_text, X_train_features, X_test_features, y_train, y_test = train_test_split(
-        X_padded, X_features, y, test_size=0.2, random_state=42
+    X_train_text, X_test_text, X_train_features, X_test_features, X_train_bow, X_test_bow, y_train, y_test = train_test_split(
+        X_padded, X_features, X_bow, y, test_size=0.2, random_state=42
     )
 
     text_input = Input(shape=(max_len,))
@@ -179,18 +179,22 @@ def ml_model(dataset):
     features_input = Input(shape=(4,))
     features_dense = Dense(16, activation="relu")(features_input)
 
+    # Bag-of-Words input
+    bow_input = Input(shape=(1000,))
+    bow_dense = Dense(16, activation="relu")(bow_input)
+
     # Concatenate LSTM output with additional features
-    concatenated = Concatenate()([lstm, features_dense])
+    concatenated = Concatenate()([lstm, features_dense, bow_dense])
     output = Dense(1, activation="sigmoid")(concatenated)
 
     # Compile the model
-    model = Model(inputs=[text_input, features_input], outputs=output)
+    model = Model(inputs=[text_input, features_input, bow_input], outputs=output)
     model.compile(loss="binary_crossentropy", optimizer="adam", metrics=["accuracy"])
 
     # Train the model
     model.fit(
-        [X_train_text, X_train_features], y_train,
-        epochs=5, batch_size=32, validation_data=([X_test_text, X_test_features], y_test)
+        [X_train_text, X_train_features, X_train_bow], y_train,
+        epochs=5, batch_size=32, validation_data=([X_test_text, X_test_features, X_test_bow], y_test)
     )
 
     # Save model
@@ -203,7 +207,10 @@ def ml_model(dataset):
     with open("scaler.pkl", "wb") as f:
         pickle.dump(scaler, f)
 
-    print("Model, tokenizer and scaler saved successfully!")
+    with open("vectorizer.pkl", "wb") as f:
+        pickle.dump(vectorizer, f)
+
+    print("Model saved successfully!")
 
 
 if __name__ == "__main__":
