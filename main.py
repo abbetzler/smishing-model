@@ -3,6 +3,8 @@ from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 import pickle
 from features import FeatureExtractor
+from fastapi import FastAPI
+from pydantic import BaseModel
 
 # Load the model
 model = load_model("lstm_sms_classifier.keras")
@@ -16,6 +18,14 @@ with open("scaler.pkl", "rb") as f:
 
 with open("vectorizer.pkl", "rb") as f:
     vectorizer = pickle.load(f)
+
+# Define the FastAPI app
+app = FastAPI()
+
+
+# Define the request model
+class SMSInput(BaseModel):
+    message: str
 
 
 # Function to preprocess input SMS for prediction
@@ -36,21 +46,16 @@ def preprocess_sms(text):
     return padded, features, tfidf_vector
 
 
-# Predict function
-def predict_sms(text):
-    X_text, X_features, X_tfidf = preprocess_sms(text)
+# Prediction endpoint
+@app.post("/predict")
+async def predict_sms(data: SMSInput):
+    X_text, X_features, X_tfidf = preprocess_sms(data.message)
     prediction = model.predict([X_text, X_features, X_tfidf])[0, 0]
     print(prediction)
-    return "smish" if prediction > 0.5 else "ham"
+    return {"message": data.message, "prediction": str(prediction)}
 
 
-if __name__ == "__main__":
-    # Example SMS
-    smish = ("WARNING:(Criminal Investigation Division) I.R.S is filing a lawsuit against you, for more information "
-             "call +17038798780 on urgent basis, Otherwise your arrest warrant will be forwarded to your local police "
-             "department and your property and bank accounts and social benifits will be frozen by government.")
-
-    ham = "Hey, are we still meeting for coffee at 3?"
-
-    print(predict_sms(smish))
-    print(predict_sms(ham))
+# Health check
+@app.get("/")
+def root():
+    return {"status": "SMS classifier API is running"}

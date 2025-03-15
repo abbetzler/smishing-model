@@ -8,7 +8,7 @@ SUSPICIOUS_WORDS = [
     "limited time", "alert", "hurry", "final notice", "winner",
     "claim now", "call now", "verify", "action required", "reply now",
     "warning", "IRS", "I.R.S", "arrest", "account", "free", "bank",
-    "click", "claim", "limited", "lottery"
+    "click", "claim", "limited", "lottery", "prize"
 ]
 
 
