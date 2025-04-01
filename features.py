@@ -11,6 +11,31 @@ SUSPICIOUS_WORDS = [
     "click", "claim", "limited", "lottery", "prize"
 ]
 
+SUSPICIOUS_WORDS_PT = [
+    # Financial & Banking Fraud
+    "banco", "cartão bloqueado", "transação suspeita", "sua conta foi suspensa",
+    "verificação urgente", "atualize seus dados", "senha comprometida",
+    "acesso não autorizado", "pagamento pendente", "débito automático cancelado",
+
+    # Fake Prizes & Promotions
+    "você ganhou", "parabéns", "resgate seu prêmio", "oferta exclusiva",
+    "clique para confirmar", "desconto imperdível", "promoção por tempo limitado",
+
+    # Government & Tax Scams
+    "Receita Federal", "pendência no CPF", "multas pendentes",
+    "regularização cadastral", "seu benefício foi bloqueado", "atualização do CadÚnico",
+
+    # Delivery & Package Scams
+    "correios", "rastreamento", "sua entrega está pendente",
+    "confirme seu endereço", "envio retido", "atualização de entrega",
+
+    # Malware & Phishing Tactics
+    "baixe o aplicativo", "confirme sua identidade", "acesse o link",
+    "instale este software", "urgente", "evite bloqueio", "senha expirada"
+]
+
+SUSPICIOUS_WORDS = SUSPICIOUS_WORDS + SUSPICIOUS_WORDS_PT
+
 
 class FeatureExtractor:
     def __init__(self):

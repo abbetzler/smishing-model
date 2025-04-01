@@ -29,6 +29,7 @@ nltk.download('averaged_perceptron_tagger_eng')
 
 dataset_csv = "datasets/analysisdataset.csv"
 dataset_txt = "datasets/SMSSmishCollection.txt"
+dataset_pt = "datasets/sms_dataset_pt.txt"
 columns_to_keep = ["MainText", "Phishing"]
 
 
@@ -83,10 +84,24 @@ def clean_dataset(dataframe):
 
     # Create a new DataFrame from the parsed data
     txt_df = pd.DataFrame(parsed_data)
-    txt_df.loc[:, "CleanText"] = txt_df["MainText"].apply(clean_sms)
+    txt_df.loc[:, "CleanText"] = txt_df["MainText"].apply(clean_sms, language="en")
+
+    # Dataset in Portuguese
+    parsed_data_pt = []
+
+    with open(dataset_pt, 'r', encoding='utf-8') as file:
+        for line in file:
+            # Split the line into label and text
+            parts = line.strip().split(maxsplit=1)
+            if len(parts) == 2:
+                label, text = parts
+                parsed_data_pt.append({'MainText': text, 'Label': label})
+
+    txt_df_pt = pd.DataFrame(parsed_data_pt)
+    txt_df_pt.loc[:, "CleanText"] = txt_df_pt["MainText"].apply(clean_sms, language="pt")
 
     # Concatenate the existing DataFrame with the new DataFrame
-    combined_df = pd.concat([cleaned_df, txt_df], ignore_index=True)
+    combined_df = pd.concat([cleaned_df, txt_df, txt_df_pt], ignore_index=True)
 
     # Save the combined dataset to a new CSV file
     output_file_path = "datasets/combined_dataset.csv"
@@ -105,18 +120,26 @@ def assign_label(phishing_value):
         return "unknown"
 
 
-def clean_sms(text):
+def clean_sms(text, language="en"):
     # Convert text to lower case
     text = text.lower()
 
     # Remove punctuations
     text = text.translate(str.maketrans('', '', string.punctuation))
 
+    filtered_text = ""
+
     # Use nltk to remove stop words
-    words = word_tokenize(text)
-    stop_words = set(stopwords.words('english'))
-    filtered_words = [word for word in words if word.lower() not in stop_words]
-    filtered_text = ' '.join(filtered_words)
+    if language == "en":
+        words = word_tokenize(text, 'english')
+        stop_words = set(stopwords.words('english'))
+        filtered_words = [word for word in words if word.lower() not in stop_words]
+        filtered_text = ' '.join(filtered_words)
+    elif language == "pt":
+        words = word_tokenize(text, 'portuguese')
+        stop_words = set(stopwords.words('portuguese'))
+        filtered_words = [word for word in words if word.lower() not in stop_words]
+        filtered_text = ' '.join(filtered_words)
 
     return filtered_text
 
