@@ -16,6 +16,7 @@ from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Embedding, LSTM, Dense, Dropout, Input, Concatenate, Flatten
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import precision_score, recall_score, f1_score
 import pickle
 from features import FeatureExtractor
 
@@ -222,6 +223,17 @@ def ml_model(dataset):
         pickle.dump(vectorizer, f)
 
     print("Model saved successfully!")
+
+    y_pred_probs = model.predict([X_test_text, X_test_features, X_test_tfidf])
+    y_pred = (y_pred_probs > 0.5).astype(int)
+
+    precision = precision_score(y_test, y_pred)
+    recall = recall_score(y_test, y_pred)
+    f1 = f1_score(y_test, y_pred)
+
+    print(f"Precision: {precision:.2f}")
+    print(f"Recall: {recall:.2f}")
+    print(f"F1 Score: {f1:.2f}")
 
 
 if __name__ == "__main__":
