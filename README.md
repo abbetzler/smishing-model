@@ -10,6 +10,12 @@ To train the model, run:
 python model.py
 ```
 
+To run the Prediction API, run:
+
+```shell
+python predict.py
+```
+
 ## Contributing
 
 Pull requests are welcome. For major changes, please open an issue first
